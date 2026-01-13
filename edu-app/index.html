@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ScholarPro Ultra | Context-Aware Quiz</title>
+    <style>
+        :root { 
+            --primary: #0f172a; --accent: #2563eb; --bg: #f8fafc; --white: #ffffff; 
+            --correct: #166534; --wrong: #991b1b; --history-bg: #f1f5f9;
+        }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: 'Inter', sans-serif; background: var(--bg); min-height: 100vh; display: flex; flex-direction: column; }
+
+        header { background: var(--primary); padding: 1.2rem; display: flex; flex-direction: column; gap: 10px; z-index: 100; }
+        .logo { color: white; font-weight: 900; font-size: 1.2rem; text-align: center; letter-spacing: 1px; }
+        .search-container { display: flex; background: white; border-radius: 8px; overflow: hidden; width: 100%; }
+        .search-container input { flex: 1; padding: 12px; border: none; outline: none; min-width: 0; }
+        .search-container button { padding: 12px 20px; border: none; background: var(--accent); color: white; font-weight: 700; cursor: pointer; }
+
+        .workspace { display: flex; flex-direction: column; gap: 15px; padding: 15px; flex: 1; }
+        .history-pane, .tools-pane { background: var(--history-bg); border-radius: 12px; padding: 15px; border: 1px solid #e2e8f0; }
+        #content-pane { background: var(--white); border-radius: 12px; padding: 25px; border: 1px solid #e2e8f0; order: -1; }
+
+        @media (min-width: 1024px) {
+            header { flex-direction: row; padding: 1rem 2rem; justify-content: space-between; align-items: center; }
+            .search-container { width: 400px; }
+            .workspace { display: grid; grid-template-columns: 240px 1fr 380px; height: calc(100vh - 80px); overflow: hidden; }
+            #content-pane { order: 0; overflow-y: auto; }
+            .history-pane, .tools-pane { overflow-y: auto; }
+        }
+
+        /* --- FLASHCARD STYLES --- */
+        .flashcard-section { margin-top: 20px; display: none; }
+        .fc-container { perspective: 1000px; width: 100%; height: 180px; cursor: pointer; position: relative; }
+        .fc-inner { position: relative; width: 100%; height: 100%; text-align: center; transition: transform 0.6s; transform-style: preserve-3d; }
+        .fc-container.flipped .fc-inner { transform: rotateY(180deg); }
+        .fc-front, .fc-back { position: absolute; width: 100%; height: 100%; backface-visibility: hidden; display: flex; align-items: center; justify-content: center; padding: 20px; border-radius: 12px; font-size: 0.9rem; font-weight: 600; box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1); }
+        .fc-front { background: var(--white); border: 2px solid var(--accent); color: var(--primary); }
+        .fc-back { background: var(--accent); color: white; transform: rotateY(180deg); }
+        .fc-controls { display: flex; justify-content: space-between; align-items: center; margin-top: 10px; gap: 10px; }
+        .fc-btn { background: #cbd5e1; border: none; padding: 5px 15px; border-radius: 4px; cursor: pointer; font-weight: bold; }
+
+        .timer-container { height: 8px; background: #e2e8f0; border-radius: 4px; margin-bottom: 20px; overflow: hidden; display: none; }
+        #timer-fill { height: 100%; background: #ef4444; width: 0%; transition: width 1s linear; }
+
+        .history-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+        .btn-clear { background: #fee2e2; color: #991b1b; border: none; padding: 4px 8px; border-radius: 4px; font-size: 0.65rem; font-weight: 700; cursor: pointer; }
+
+        .quiz-box { display: none; margin-top: 20px; background: #fff; padding: 20px; border-radius: 12px; border: 2px solid #e2e8f0; }
+        .quiz-q { margin-bottom: 25px; padding: 15px; border-radius: 8px; background: #fcfcfc; border: 1px solid #eee; }
+        .quiz-opt { display: block; margin: 10px 0; padding: 12px; background: #fff; border: 1px solid #cbd5e1; border-radius: 6px; cursor: pointer; font-size: 0.9rem; word-wrap: break-word; }
+        .selected { border-color: var(--accent); background: #dbeafe !important; outline: 2px solid var(--accent); }
+        .translate-q-btn { margin-top: 10px; padding: 5px 10px; font-size: 0.7rem; background: #e2e8f0; border: none; border-radius: 4px; cursor: pointer; color: var(--primary); font-weight: bold; }
+        
+        .is-correct { background: #dcfce7 !important; border-color: #22c55e !important; color: var(--correct); font-weight: bold; }
+        .is-wrong { background: #fee2e2 !important; border-color: #ef4444 !important; color: var(--wrong); font-weight: bold; }
+        .feedback-label { display: none; font-size: 0.8rem; margin-top: 10px; padding: 8px; border-radius: 4px; }
+
+        .notepad { flex: 1; background: #fffbeb; border: 1px solid #fef3c7; border-radius: 12px; display: flex; flex-direction: column; min-height: 200px; margin-top: 15px; }
+        .notepad-header { padding: 10px; background: #fef3c7; display: flex; justify-content: space-between; font-weight: 800; color: #92400e; font-size: 0.75rem; }
+        #note-area { flex: 1; padding: 15px; border: none; background: transparent; resize: none; outline: none; font-family: 'Courier New', monospace; width: 100%; }
+
+        .loader { display: none; text-align: center; padding: 15px; font-weight: bold; color: var(--accent); }
+        #return-btn { display: none; width: 100%; padding: 15px; background: #64748b; color: white; border: none; border-radius: 8px; cursor: pointer; font-weight: 900; margin-top: 10px; }
+    </style>
+</head>
+<body>
+
+<header>
+    <div class="logo">SCHOLARPRO ULTRA</div>
+    <div class="search-container">
+        <input type="text" id="search-bar" placeholder="Enter topic..." onkeypress="if(event.key==='Enter') startSearch()">
+        <button onclick="startSearch()">SEARCH</button>
+    </div>
+</header>
+
+<div class="workspace">
+    <aside class="history-pane">
+        <div class="history-header">
+            <h4>History</h4>
+            <button class="btn-clear" onclick="clearHistory()">CLEAR</button>
+        </div>
+        <ul id="history-list" style="list-style:none; font-size:0.85rem;"></ul>
+    </aside>
+
+    <main id="content-pane">
+        <div id="loader" class="loader">⚙️ ANALYZING CONTEXT...</div>
+        <div id="main-display"><h1>Research Portal</h1><p>Search a topic for high-difficulty assessment.</p></div>
+        <div id="quiz-area" class="quiz-box">
+            <div class="timer-container" id="timer-box"><div id="timer-fill"></div></div>
+            <div id="quiz-wrapper"></div>
+            <button id="return-btn" onclick="returnToArticle()">⬅ RETURN TO ARTICLE</button>
+        </div>
+    </main>
+
+    <aside class="tools-pane">
+        <div class="ai-box">
+            <h4>🧠 Study Engine</h4>
+            <textarea id="ai-input" style="width:100%; height:70px; margin:10px 0; padding:10px; border-radius:8px; border:1px solid #ccc;" placeholder="Paste text..."></textarea>
+            <button onclick="generatePoints()" style="width:100%; padding:10px; background:#10b981; color:white; border:none; border-radius:8px; cursor:pointer; font-weight:bold; margin-bottom:8px;">GENERATE POINTS</button>
+            <button onclick="startQuiz()" style="width:100%; padding:10px; background:#f59e0b; color:white; border:none; border-radius:8px; cursor:pointer; font-weight:bold;">START 10-Q ADVANCED QUIZ</button>
+            
+            <div class="flashcard-section" id="fc-section">
+                <h4 style="margin-bottom:10px;">🎴 Flashcards</h4>
+                <div class="fc-container" onclick="this.classList.toggle('flipped')">
+                    <div class="fc-inner">
+                        <div class="fc-front" id="fc-front">Question?</div>
+                        <div class="fc-back" id="fc-back">Answer!</div>
+                    </div>
+                </div>
+                <div class="fc-controls">
+                    <button class="fc-btn" onclick="prevFC()">Prev</button>
+                    <span id="fc-counter" style="font-size:0.75rem; font-weight:bold;">0 / 0</span>
+                    <button class="fc-btn" onclick="nextFC()">Next</button>
+                </div>
+            </div>
+
+            <div id="summary-list" style="margin-top:15px;"></div>
+        </div>
+        <div class="notepad">
+            <div class="notepad-header">VOLATILE NOTES <button onclick="saveTxt()" style="background:#92400e; color:white; border:none; padding:3px 8px; border-radius:4px; cursor:pointer;">SAVE .TXT</button></div>
+            <textarea id="note-area" placeholder="Notes delete on exit..."></textarea>
+        </div>
+    </aside>
+</div>
+
+<script>
+    let searchHistory = JSON.parse(localStorage.getItem('scholar_history')) || [];
+    let currentQuizData = [];
+    let flashcards = [];
+    let currentFCIdx = 0;
+    let targetLang = 'en';
+    let originalEnglishText = ""; 
+    let quizInterval;
+
+    const languages = [{c:"hi", n:"Hindi"}, {c:"bn", n:"Bengali"}, {c:"mr", n:"Marathi"}, {c:"ta", n:"Tamil"}, {c:"te", n:"Telugu"}, {c:"gu", n:"Gujarati"}, {c:"kn", n:"Kannada"}, {c:"ml", n:"Malayalam"}, {c:"pa", n:"Punjabi"}, {c:"en", n:"English"}, {c:"es", n:"Spanish"}, {c:"fr", n:"French"}, {c:"de", n:"German"}];
+
+    async function startSearch() {
+        const query = document.getElementById('search-bar').value;
+        if (!query) return;
+        if(!searchHistory.includes(query)) { searchHistory.push(query); localStorage.setItem('scholar_history', JSON.stringify(searchHistory)); updateHistoryUI(); }
+        document.getElementById('loader').style.display = 'block';
+        const res = await fetch(`https://en.wikipedia.org/w/api.php?action=query&generator=search&gsrsearch=${encodeURIComponent(query)}&gsrlimit=5&prop=extracts&exintro&explaintext&format=json&origin=*`);
+        const data = await res.json();
+        let html = `<h2>Results: ${query}</h2>`;
+        if (data.query) Object.values(data.query.pages).forEach(p => html += `<div onclick="loadArticle('${p.title.replace(/'/g, "\\'")}')" style="padding:15px; border-bottom:1px solid #ddd; cursor:pointer;"><b>${p.title}</b></div>`);
+        document.getElementById('main-display').innerHTML = html;
+        document.getElementById('loader').style.display = 'none';
+        returnToArticle();
+    }
+
+    async function loadArticle(title) {
+        document.getElementById('loader').style.display = 'block';
+        const res = await fetch(`https://en.wikipedia.org/w/api.php?action=parse&page=${encodeURIComponent(title)}&prop=wikitext|text&format=json&origin=*`);
+        const data = await res.json();
+        const textRes = await fetch(`https://en.wikipedia.org/w/api.php?action=query&prop=extracts&titles=${encodeURIComponent(title)}&explaintext&format=json&origin=*`);
+        const textData = await textRes.json();
+        originalEnglishText = Object.values(textData.query.pages)[0].extract;
+        document.getElementById('main-display').innerHTML = `
+            <div style="background:#f8fafc; padding:10px; border-radius:8px; margin-bottom:15px; display:flex; gap:10px; flex-wrap:wrap;">
+                <select id="langChoice" style="flex:1; padding:8px; min-width:150px;">${languages.map(l => `<option value="${l.c}">${l.n}</option>`).join('')}</select>
+                <button onclick="translatePage()" style="padding:8px 15px; background:var(--accent); color:white; border:none; border-radius:5px; cursor:pointer;">Set Translation Lang</button>
+            </div>
+            <div id="wiki-content"><h1>${title}</h1>${data.parse.text['*']}</div>`;
+        document.getElementById('loader').style.display = 'none';
+    }
+
+    async function translateText(text, lang) {
+        try {
+            const res = await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=${lang}&dt=t&q=${encodeURIComponent(text)}`);
+            const data = await res.json();
+            return data && data[0] ? data[0].map(s => s[0]).join("") : text;
+        } catch (e) { return text; }
+    }
+
+    async function translatePage() {
+        targetLang = document.getElementById('langChoice').value;
+        const elements = Array.from(document.querySelectorAll('#wiki-content p, #wiki-content li, #wiki-content h1, #wiki-content h2'));
+        document.getElementById('loader').style.display = 'block';
+        document.getElementById('loader').innerText = "🚀 TRANSLATING ALL SECTIONS...";
+        const batchSize = 5;
+        for (let i = 0; i < elements.length; i += batchSize) {
+            const batch = elements.slice(i, i + batchSize);
+            await Promise.all(batch.map(async (el) => {
+                const text = el.innerText.trim();
+                if (text.length > 5) {
+                    try {
+                        const translated = await translateText(text, targetLang);
+                        if (translated) el.innerText = translated;
+                    } catch (err) {
+                        await new Promise(r => setTimeout(r, 500));
+                        const retry = await translateText(text, targetLang);
+                        if (retry) el.innerText = retry;
+                    }
+                }
+            }));
+        }
+        document.getElementById('loader').style.display = 'none';
+        document.getElementById('loader').innerText = "⚙️ ANALYZING CONTEXT...";
+    }
+
+    function generatePoints() {
+        const text = originalEnglishText || document.getElementById('ai-input').value;
+        const list = document.getElementById('summary-list');
+        list.innerHTML = "";
+        const sentences = text.split(/[.!?]+/).filter(s => s.trim().length > 30).slice(0, 10);
+        
+        flashcards = [];
+        sentences.forEach((p, i) => {
+            list.innerHTML += `<div style="background:white; padding:10px; border-left:4px solid #10b981; margin-bottom:8px; font-size:0.8rem;"><b>Point ${i+1}:</b> ${p.trim()}.</div>`;
+            const words = p.trim().split(' ');
+            const mid = Math.floor(words.length / 2);
+            flashcards.push({ front: words.slice(0, mid).join(' ') + "...", back: "..." + words.slice(mid).join(' ') });
+        });
+
+        if (flashcards.length > 0) {
+            document.getElementById('fc-section').style.display = "block";
+            currentFCIdx = 0;
+            updateFC();
+        }
+    }
+
+    function updateFC() {
+        document.querySelector('.fc-container').classList.remove('flipped');
+        document.getElementById('fc-front').innerText = flashcards[currentFCIdx].front;
+        document.getElementById('fc-back').innerText = flashcards[currentFCIdx].back;
+        document.getElementById('fc-counter').innerText = `${currentFCIdx + 1} / ${flashcards.length}`;
+    }
+
+    function nextFC() { if(currentFCIdx < flashcards.length - 1) { currentFCIdx++; updateFC(); } }
+    function prevFC() { if(currentFCIdx > 0) { currentFCIdx--; updateFC(); } }
+
+    async function translateSpecificQ(idx) {
+        const qContainer = document.querySelectorAll('.quiz-q')[idx];
+        const elements = qContainer.querySelectorAll('p, .quiz-opt');
+        for (let el of elements) el.innerText = await translateText(el.innerText, targetLang);
+    }
+
+    function startQuiz() {
+        const sourceText = originalEnglishText || document.getElementById('ai-input').value;
+        if (sourceText.length < 500) return alert("Search a more detailed topic first to generate 10 questions.");
+        const allWords = sourceText.match(/[A-Z][a-z]{5,}/g) || [];
+        const uniqueNouns = [...new Set(allWords)].filter(w => w.length > 6);
+        const sentences = sourceText.split(/[.!?]+/).filter(s => s.trim().length > 100);
+        if(sentences.length < 10) return alert("Article too short for advanced assessment.");
+
+        currentQuizData = [];
+        const quizWrapper = document.getElementById('quiz-wrapper');
+        quizWrapper.innerHTML = `<h3>Advanced Academic Competency (10 Questions)</h3>`;
+        document.getElementById('return-btn').style.display = "none";
+        
+        let usedKeywords = new Set();
+        for(let i=0; i<10; i++) {
+            let sentence = sentences[Math.floor(Math.random()*sentences.length)].trim();
+            let words = sentence.split(' ');
+            let keyword = "";
+            for(let w of words) {
+                let clean = w.replace(/[^a-zA-Z]/g, "");
+                if(uniqueNouns.includes(clean) && !usedKeywords.has(clean)) { 
+                    keyword = clean; usedKeywords.add(clean); break; 
+                }
+            }
+            if(!keyword) keyword = uniqueNouns[i] || "Parameter";
+            let distractors = uniqueNouns.filter(n => n !== keyword).sort(() => 0.5 - Math.random()).slice(0, 3);
+            currentQuizData.push({ q: sentence.replace(keyword, "__________"), a: keyword });
+            let options = [keyword, ...distractors].sort(() => Math.random() - 0.5);
+            let qHtml = `<div class="quiz-q"><p><b>Q${i+1}:</b> ${currentQuizData[i].q}</p>`;
+            options.forEach(opt => qHtml += `<div class="quiz-opt" onclick="selectOpt(this, ${i})">${opt}</div>`);
+            qHtml += `<button class="translate-q-btn" onclick="translateSpecificQ(${i})">Translate Q${i+1}</button>`;
+            qHtml += `<div class="feedback-label" id="feedback-${i}"></div></div>`;
+            quizWrapper.innerHTML += qHtml;
+        }
+        quizWrapper.innerHTML += `<button id="submit-btn" onclick="submitQuiz()" style="width:100%; padding:15px; background:var(--primary); color:white; border:none; border-radius:8px; cursor:pointer; font-weight:900; margin-bottom: 20px;">SUBMIT TEST</button>`;
+        document.getElementById('quiz-area').style.display = "block";
+        document.getElementById('timer-box').style.display = "block";
+        document.getElementById('main-display').style.display = "none";
+        startQuizTimer(10 * 30);
+    }
+
+    function startQuizTimer(duration) {
+        clearInterval(quizInterval);
+        let timeRemaining = duration;
+        const fill = document.getElementById('timer-fill');
+        quizInterval = setInterval(() => {
+            timeRemaining--;
+            let percentage = ((duration - timeRemaining) / duration) * 100;
+            fill.style.width = percentage + "%";
+            if(timeRemaining <= 0) { clearInterval(quizInterval); submitQuiz(); }
+        }, 1000);
+    }
+
+    function selectOpt(el, qIdx) {
+        el.parentElement.querySelectorAll('.quiz-opt').forEach(o => o.classList.remove('selected'));
+        el.classList.add('selected');
+        currentQuizData[qIdx].userChoice = el.innerText;
+    }
+
+    async function submitQuiz() {
+        clearInterval(quizInterval);
+        let score = 0;
+        const questions = document.querySelectorAll('.quiz-q');
+        questions.forEach((qDiv, i) => {
+            const opts = qDiv.querySelectorAll('.quiz-opt');
+            const feedback = qDiv.querySelector(`#feedback-${i}`);
+            feedback.style.display = "block";
+            opts.forEach(opt => {
+                if (opt.innerText === currentQuizData[i].a) opt.classList.add('is-correct');
+                if (opt.classList.contains('selected') && opt.innerText !== currentQuizData[i].a) opt.classList.add('is-wrong');
+            });
+            if (currentQuizData[i].userChoice === currentQuizData[i].a) { score++; feedback.innerHTML = `<span style="color:var(--correct)">Correct</span>`; }
+            else { feedback.innerHTML = `<span style="color:var(--wrong)">Incorrect: ${currentQuizData[i].a}</span>`; }
+        });
+        document.getElementById('submit-btn').style.display = "none";
+        document.getElementById('return-btn').style.display = "block";
+        alert(`Final Assessment Score: ${score}/10`);
+    }
+
+    function returnToArticle() {
+        document.getElementById('quiz-area').style.display = "none";
+        document.getElementById('main-display').style.display = "block";
+        document.getElementById('timer-box').style.display = "none";
+        clearInterval(quizInterval);
+    }
+
+    function updateHistoryUI() {
+        const list = document.getElementById('history-list');
+        list.innerHTML = searchHistory.map(h => `<li onclick="document.getElementById('search-bar').value='${h}';startSearch()" style="padding:10px 0; border-bottom:1px solid #ddd; cursor:pointer; color:var(--accent);">${h}</li>`).join('');
+    }
+
+    function clearHistory() { searchHistory = []; localStorage.removeItem('scholar_history'); updateHistoryUI(); }
+    function saveTxt() {
+        const blob = new Blob([document.getElementById('note-area').value], {type:'text/plain'});
+        const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = "Study_Notes.txt"; a.click();
+    }
+
+    window.onload = updateHistoryUI;
+    document.getElementById('note-area').oninput = (e) => sessionStorage.setItem('v_notes', e.target.value);
+    if(sessionStorage.getItem('v_notes')) document.getElementById('note-area').value = sessionStorage.getItem('v_notes');
+</script>
+</body>
+</html>
